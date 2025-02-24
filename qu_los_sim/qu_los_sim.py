@@ -114,8 +114,8 @@ def make_los(parameters : Dict,
                                              np.ones_like(complex_pol.imag)*noise],
                                              dPhi_radm2=0.1, phiMax_radm2=200)
         # Include results in dictionary:
-        results = {'fd'  :rmsfplanes_out,
-                   'fdf_dirty' : rmsynth_out}
+        results['fd'] = rmsfplanes_out
+        results['fdf_dirty'] = rmsynth_out
     
         
     # If output file is specified, save results
