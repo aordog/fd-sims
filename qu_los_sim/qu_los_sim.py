@@ -7,14 +7,18 @@ from RMtools_1D.do_RMclean_1D import run_rmclean
 from RMutils.util_RM import get_rmsf_planes
 
 
-def make_los(parameters : Dict,  
-             freqs      : Optional[Union[List[float], np.ndarray]] = None,
-             noise      : float = 0.001,
-             output_file: str = None,
-             do_rmsynth : bool = True) -> Dict[str, np.ndarray]:
+def make_los(parameters  : Dict,  
+             freqs       : Optional[Union[List[float], np.ndarray]] = None,
+             q_noise_in  : float = 0.0,
+             u_noise_in  : float = 0.0,
+             dq_in       : float = 0.1,
+             du_in       : float = 0.1,
+             output_file : str = None,
+             do_rmsynth  : bool = True) -> Dict[str, np.ndarray]:
     """
     Calculate the complex polarisation for a set of input models along the LOS.
     Optionally performs RM synthesis on the resulting complex polarisation.
+    No RM CLEAN available yet.
     
     Parameters:
     -----------
@@ -32,9 +36,15 @@ def make_los(parameters : Dict,
         Array containing observing frequencies (in Hz).
         Default is 300-1800 MHz with 1 MHz spacing.
     
-    noise : float, optional
-        Standard deviation of Gaussian noise to include in Q and U
-        (in same units as polarised intensity). Default is 0.001.
+    q_noise_in, u_noise_in : float OR numpy array, optional
+        Standard deviation of Gaussian noise to include in q and u
+        (in same units as polarised intensity). Default is 0.0.
+        Can also be arrays with frequency-dependent standard deviations.
+
+    dq_in, du_in : float OR numpy array, optional
+        Error estimates for q and u in RM synthesis inverse variance weights
+        (in same units as polarised intensity). Default is 0.1 (uniform).
+        Can also be arrays with frequency-dependent error estimates.
     
     output_file : str, optional
         Name of output file to save the results. If not provided,
@@ -95,8 +105,7 @@ def make_los(parameters : Dict,
     complex_pol = sim_qu(parameters, lsq)
 
     # Add noise:
-    q_noise = np.random.normal(loc=np.zeros_like(freqs), scale=noise*np.ones_like(freqs))
-    u_noise = np.random.normal(loc=np.zeros_like(freqs), scale=noise*np.ones_like(freqs))
+    q_noise, u_noise = make_noise_arrays(q_noise_in, u_noise_in, freqs)
     complex_pol.real = complex_pol.real+q_noise
     complex_pol.imag = complex_pol.imag+u_noise
 
@@ -107,17 +116,17 @@ def make_los(parameters : Dict,
 
     # RM synthesis:
     if do_rmsynth:
+        print('Doing RM synthesis...')
+        dq, du = make_error_arrays(dq_in, du_in, freqs)
         rmsfplanes_out = get_rmsf_planes(lsq, np.arange(-200,200,0.1))
         rmsynth_out    = run_rmsynth([freqs, complex_pol.real, 
                                              complex_pol.imag,
-                                             np.ones_like(complex_pol.real)*noise, 
-                                             np.ones_like(complex_pol.imag)*noise],
+                                             dq, du],
                                              dPhi_radm2=0.1, phiMax_radm2=200)
         # Include results in dictionary:
         results['fd'] = rmsfplanes_out
         results['fdf_dirty'] = rmsynth_out
 
-        print('doing RM synthesis')
     
         
     # If output file is specified, save results
@@ -128,7 +137,49 @@ def make_los(parameters : Dict,
                 f.write(f"\n# Model: {model_name}\n")
                 np.savetxt(f, data)
     
+    print('')
+
     return results
+
+
+def make_noise_arrays(q_noise_in, u_noise_in, freqs):
+
+    if isinstance(q_noise_in, float):
+        if isinstance(u_noise_in, float):
+            print("Making q and u noise array from: (sigma_q,sigma_u)=("+str(q_noise_in)+","+str(u_noise_in)+")")
+            q_noise = np.random.normal(loc=np.zeros_like(freqs), scale=q_noise_in*np.ones_like(freqs))
+            u_noise = np.random.normal(loc=np.zeros_like(freqs), scale=u_noise_in*np.ones_like(freqs))
+        else:
+            raise ValueError("q and u noise must be same variable type")
+    if isinstance(q_noise_in, np.ndarray):
+        if isinstance(u_noise_in, np.ndarray):
+            print("Using input q and u sigma arrays to make noise arrays")
+            q_noise = np.random.normal(loc=np.zeros_like(freqs), scale=q_noise_in)
+            u_noise = np.random.normal(loc=np.zeros_like(freqs), scale=u_noise_in)
+        else:
+            raise ValueError("q and u noise must be same variable type")
+
+    return q_noise, u_noise
+
+
+def make_error_arrays(dq_in, du_in, freqs):
+
+    if isinstance(dq_in, float):
+        if isinstance(du_in, float):
+            print("Using uniform channel weights with: (dq,du)=("+str(dq_in)+","+str(du_in)+")")
+            dq = dq_in*np.ones_like(freqs)
+            du = du_in*np.ones_like(freqs)
+        else:
+            raise ValueError("q and u errors must be same variable type")
+    if isinstance(dq_in, np.ndarray):
+        if isinstance(du_in, np.ndarray):
+            print("Using input q and u error arrays")
+            dq = dq_in
+            du = du_in
+        else:
+            raise ValueError("q and u errors must be same variable type")
+
+    return dq, du
 
 
 def check_parameters(parameters: Dict) -> None:
