@@ -116,6 +116,8 @@ def make_los(parameters : Dict,
         # Include results in dictionary:
         results['fd'] = rmsfplanes_out
         results['fdf_dirty'] = rmsynth_out
+
+        print('doing RM synthesis')
     
         
     # If output file is specified, save results
